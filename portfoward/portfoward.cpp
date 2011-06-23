@@ -4,6 +4,12 @@
 #include "stdafx.h"
 #include "portfoward.h"
 
+#include "windows.h"
+#include "tchar.h"
+#include "stdio.h"
+#include "psapi.h"
+
+
 #define MAX_LOADSTRING 100
 
 // Global Variables:
@@ -167,6 +173,8 @@ BOOL InitInstance(HINSTANCE hInstance, int nCmdShow)
 
    ShowWindow(hWnd, nCmdShow);
    UpdateWindow(hWnd);
+
+    loadDefaultForwards();
 
    return TRUE;
 }
@@ -479,12 +487,12 @@ int get_total_connections()
 
 void load_redirs()
 {
-	char filename[MAX_PATH];
-	OPENFILENAMEA of;
+	TCHAR filename[MAX_PATH];
+	OPENFILENAMEW of;
 	of.lStructSize = sizeof(of);
 	of.hwndOwner = topWindow;
 	of.hInstance = hInst;
-	of.lpstrFilter = "*.txt";
+	of.lpstrFilter = L"*.txt";
 	of.lpstrCustomFilter = NULL;
 	of.nMaxCustFilter = 0;
 	of.nFilterIndex = 1;
@@ -494,50 +502,16 @@ void load_redirs()
 	of.lpstrFileTitle = NULL;
 	of.nMaxFileTitle = 0;
 	of.lpstrInitialDir = NULL;
-	of.lpstrTitle = "Load redirections from..";
+	of.lpstrTitle = L"Load port forward settings from...";
 	of.Flags = 0;
-	of.lpstrDefExt = "txt";
+	of.lpstrDefExt = L"txt";
 	of.pvReserved = 0;
 	of.dwReserved = 0;
 	of.FlagsEx = 0;
-	if (!GetOpenFileNameA(&of))
+	if (!GetOpenFileNameW(&of))
 		return;
 
-	FILE *f = fopen(filename, "r");
-	if (f == NULL) {
-		MessageBox(topWindow, L"Cannot open specified file", L"Error", MB_OK);
-		return;
-	}
-
-	char buf[1024];
-	while (fgets(buf, 1024, f)) {
-		int lport, dport;
-		char dest[1024];
-		if (sscanf(buf, "%i %s %i", &lport, dest, &dport) == 3) {
-			WCHAR bufW[1024];
-
-			swprintf(bufW, 1024, L"%i", lport);
-			LVITEM item;
-			item.iItem = ListView_GetItemCount(redirs) + 10;
-			item.iSubItem = 0;
-			item.mask = LVIF_TEXT;
-			item.pszText = bufW;
-			int n = ListView_InsertItem(redirs, &item);
-
-			MultiByteToWideChar(CP_ACP, 0, dest, -1, bufW, 1024);
-			ListView_SetItemText(redirs, n, 1, bufW);
-
-			swprintf(bufW, 1024, L"%i", dport);
-			ListView_SetItemText(redirs, n, 2, bufW);
-			ListView_SetItemText(redirs, n, 3, L"0");
-
-			if (!setup_redir(n, lport, dest, dport)) {
-				ListView_DeleteItem(redirs, n);
-			}
-		}
-	}
-
-	fclose(f);
+    loadForwardingFile(filename);
 }
 
 void save_redirs()
@@ -575,7 +549,7 @@ void save_redirs()
 		redir_info *info = it->second;
 		
 		char buf[1024];
-		sprintf(buf, "%i %s %i", info->lport, info->dest_host, info->dport);
+		sprintf(buf, "%i %s %i\n", info->lport, info->dest_host, info->dport);
 		fputs(buf, f);
 	}
 	fclose(f);
@@ -769,4 +743,61 @@ DWORD WINAPI writer(LPVOID lpThreadParameter)
 	ci->writer_exited = true;
 
 	return 0;
+}
+
+void loadDefaultForwards(void) {
+    HANDLE Handle = GetCurrentProcess();
+    if (!Handle) return;
+
+    TCHAR Buffer[MAX_PATH];
+    if (!GetModuleFileNameEx(Handle, 0, Buffer, MAX_PATH)) return;
+
+    TCHAR *lastSlash = wcsrchr(Buffer,'\\');
+    if(!lastSlash) return;
+    wcsncpy(lastSlash+1,L"portforward.config.txt",23);
+
+    
+    FILE *f = _wfopen(Buffer,L"r");
+    if(f != NULL) {
+        fclose(f);
+        loadForwardingFile(Buffer);
+    }
+}
+
+void loadForwardingFile(TCHAR *filename) {
+    FILE *f = _wfopen(filename,L"r");
+	if (f == NULL) {
+		MessageBox(topWindow, L"Cannot open specified file", L"Error", MB_OK);
+		return;
+	}
+
+    char buf[1024];
+	while (fgets(buf, 1024, f)) {
+		int lport, dport;
+		char dest[1024];
+		if (sscanf(buf, "%i %s %i", &lport, dest, &dport) == 3) {
+			WCHAR bufW[1024];
+
+			swprintf(bufW, 1024, L"%i", lport);
+			LVITEM item;
+			item.iItem = ListView_GetItemCount(redirs) + 10;
+			item.iSubItem = 0;
+			item.mask = LVIF_TEXT;
+			item.pszText = bufW;
+			int n = ListView_InsertItem(redirs, &item);
+
+			MultiByteToWideChar(CP_ACP, 0, dest, -1, bufW, 1024);
+			ListView_SetItemText(redirs, n, 1, bufW);
+
+			swprintf(bufW, 1024, L"%i", dport);
+			ListView_SetItemText(redirs, n, 2, bufW);
+			ListView_SetItemText(redirs, n, 3, L"0");
+
+			if (!setup_redir(n, lport, dest, dport)) {
+				ListView_DeleteItem(redirs, n);
+			}
+		}
+	}
+
+	fclose(f);
 }
