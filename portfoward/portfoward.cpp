@@ -9,6 +9,9 @@
 #include "stdio.h"
 #include "psapi.h"
 
+#include <MSWSock.h>// include after winsock2.h!
+
+
 
 #define MAX_LOADSTRING 100
 
@@ -692,17 +695,18 @@ DWORD WINAPI accepter(LPVOID lpThreadParameter)
 }
 
 DWORD WINAPI reader(LPVOID lpThreadParameter)
-{
+{   // reads data from client and forwards it to the destination
 	conn_info *ci = (conn_info*)lpThreadParameter;
 
     char buf[65536];
     int n;
+    // recv data from the client and forward it to destination
     while ((n = recv(ci->n, buf, sizeof(buf), 0)) > 0 && !ci->stop) {
         send(ci->d, buf, n, 0);
     }
 
-    closesocket(ci->n);
-    closesocket(ci->d);
+    betterCloseSocket(ci->n);
+    betterCloseSocket(ci->d);
 
 	while (!ci->writer_exited)
 		Sleep(10);
@@ -737,12 +741,24 @@ DWORD WINAPI writer(LPVOID lpThreadParameter)
         send(ci->n, buf, n, 0);
     }
 
-    closesocket(ci->n);
-    closesocket(ci->d);
+    
+    betterCloseSocket(ci->n);
+    betterCloseSocket(ci->d);
 
 	ci->writer_exited = true;
 
 	return 0;
+}
+
+void betterCloseSocket(SOCKET s) {
+    GUID GuidDisconnectEx = WSAID_DISCONNECTEX;
+    LPFN_DISCONNECTEX lpfnDisconnectEx;
+    DWORD copied;
+    if (WSAIoctl(s, SIO_GET_EXTENSION_FUNCTION_POINTER, &GuidDisconnectEx, sizeof(GuidDisconnectEx), &lpfnDisconnectEx, sizeof(lpfnDisconnectEx), &copied, 0, 0) == 0)
+    {
+        lpfnDisconnectEx(s, NULL, 0, 0);
+    }
+    closesocket(s);
 }
 
 void loadDefaultForwards(void) {
